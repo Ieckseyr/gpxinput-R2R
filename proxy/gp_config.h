@@ -96,6 +96,9 @@ struct GpProxyConfig {
 
 
     DWORD       hidVendorIds[8];
+    
+
+    BOOL        hidAllowBluetooth;
     int         hidVendorIdCount;
 
     

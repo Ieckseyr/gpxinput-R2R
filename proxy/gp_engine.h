@@ -11,6 +11,7 @@ namespace gp_engine {
 
 
 void Start(void);
+bool SecondaryInstance(void);
 
 
 void Stop(void);
@@ -25,6 +26,7 @@ DWORD OnSetState(DWORD controller, WORD left, WORD right, GpFnSetState downstrea
 
 
 bool OnDeviceIoControl(DWORD ioctlCode, LPVOID inBuffer, DWORD inSize);
+bool IsSelfWrite(HANDLE hDevice);
 
 
 bool IsVibrationIoctl(DWORD code);

@@ -156,6 +156,9 @@ void GpConfigDefaults(GpProxyConfig* cfg) {
     
 
     cfg->hidVendorIds[0]      = 0x045E;
+    
+
+    cfg->hidAllowBluetooth    = FALSE;
     cfg->hidVendorIdCount     = 1;
     cfg->hidAnyGamepad        = FALSE;
     cfg->iniFound             = FALSE;
@@ -431,6 +434,7 @@ void GpConfigLoad(GpProxyConfig* cfg) {
     }
 
     
+
 
     {
         wchar_t vids[256] = {0};

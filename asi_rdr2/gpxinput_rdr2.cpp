@@ -165,8 +165,30 @@ const char* GroupName(uint32_t h) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+#define GP_UNARMED_HASH 0xA2719263u
+
+BOOL WeaponHashSafe(uint32_t w) {
+    static uint32_t sPrev = 0;
+    BOOL stable = (w != 0) && (w != GP_UNARMED_HASH) && (w == sPrev);
+    sPrev = w;
+    return stable;
+}
+
 int ReadAmmoTotal(int ped, uint32_t weapon) {
     int total = -1;
+    if (!WeaponHashSafe(weapon)) return -1;   
     __try {
         total = (int)rdr2_call2(N_GET_AMMO_IN_PED_WEAPON, (uint64_t)(int64_t)ped,
                                 (uint64_t)weapon);
@@ -192,6 +214,7 @@ BOOL GroupHasClip(uint32_t group) {
 
 BOOL ReadAmmo(int ped, uint32_t weapon, uint32_t group, int* out) {
     if (!GroupHasClip(group)) return FALSE;   
+    if (!WeaponHashSafe(weapon)) return FALSE; 
     if (g_ammoFaults >= 3) return FALSE;
 
     
