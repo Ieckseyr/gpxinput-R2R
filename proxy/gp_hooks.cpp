@@ -69,7 +69,10 @@ BOOL WINAPI DetourDeviceIoControl(HANDLE hDevice, DWORD dwIoControlCode,
                                   LPDWORD lpBytesReturned, LPOVERLAPPED lpOverlapped) {
     
 
-    if (!lpOverlapped && gp_engine::OnDeviceIoControl(dwIoControlCode, lpInBuffer, nInBufferSize)) {
+    
+
+    if (!lpOverlapped && !gp_engine::IsSelfWrite(hDevice) &&
+        gp_engine::OnDeviceIoControl(dwIoControlCode, lpInBuffer, nInBufferSize)) {
         if (lpBytesReturned) *lpBytesReturned = 0;
         return TRUE;   
     }
@@ -184,6 +187,12 @@ int InstallSteamProbe(void) {
 
 bool Install(void) {
     if (g_installed) return true;
+
+    
+    if (gp_engine::SecondaryInstance()) {
+        GP_LOG_INFO("hooks: 从属实例，跳过全部挂钩（主实例负责捕获与输出）");
+        return false;
+    }
 
     GpProxyConfig cfg;
     GpConfigDefaults(&cfg);

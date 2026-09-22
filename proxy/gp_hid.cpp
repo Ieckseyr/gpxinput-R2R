@@ -36,6 +36,15 @@ DWORD g_vendorIds[8] = { 0x045E };
 int   g_vendorIdCount = 1;
 BOOL  g_anyGamepad = FALSE;
 
+
+
+
+
+
+
+
+BOOL  g_allowBluetooth = FALSE;
+
 BOOL VendorAllowed(USHORT vid) {
     if (g_anyGamepad) return TRUE;
     for (int i = 0; i < g_vendorIdCount; ++i) {
@@ -146,6 +155,17 @@ BOOL OpenOne(const wchar_t* path, Device* out) {
     out->pid  = attrs.ProductID;
     out->outputReportBytes = haveCaps ? caps.OutputReportByteLength : 0;
     out->bluetooth = IsBluetoothInstance(out->instanceId, path);
+
+    if (out->bluetooth && !g_allowBluetooth) {
+        GP_LOG_INFO("gphid: 跳过蓝牙手柄 VID=%04X PID=%04X —— 蓝牙的输出报告"
+                    "布局与有线不同，写错会让电机乱震。已改用 "
+                    "Windows.Gaming.Input/XInput 通道（格式由驱动负责）。"
+                    "确要用蓝牙 HID 就在 ini 里设 HidAllowBluetooth=true",
+                    attrs.VendorID, attrs.ProductID);
+        CloseHandle(h);
+        return FALSE;
+    }
+
     out->hDevice = h;
 
     
@@ -223,6 +243,21 @@ void EnumerateInto(Device* list, int* count, int maxCount) {
 }
 
 }  
+
+void SetBluetoothAllowed(BOOL on) { g_allowBluetooth = on; }
+
+
+
+
+
+
+BOOL IsOurHandle(HANDLE h) {
+    if (!h || h == INVALID_HANDLE_VALUE) return FALSE;
+    for (int i = 0; i < g_count && i < kMaxDevices; ++i) {
+        if (g_devices[i].hDevice == h) return TRUE;
+    }
+    return FALSE;
+}
 
 void SetVendorFilter(const DWORD* vendorIds, int count, BOOL anyGamepad) {
     EnsureLock();

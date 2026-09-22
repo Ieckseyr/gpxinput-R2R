@@ -33,6 +33,8 @@ const DWORD kKeepAliveMs = 500;
 GpProxyConfig   g_cfg;
 volatile LONG   g_running = 0;
 HANDLE          g_outputThread = nullptr;
+BOOL            g_secondary     = FALSE;   
+volatile DWORD  g_outputThreadId = 0;   
 HANDLE          g_stopEvent = nullptr;
 
 
@@ -108,6 +110,7 @@ inline void BumpTimeout(void) {
     GpControl* c = gpshm::Control();
     BumpStat(&g_statTimeouts, c ? &c->statTimeouts : nullptr);
 }
+
 
 
 
@@ -524,6 +527,7 @@ BOOL SendOut(uint32_t controller, const GpFrame* f) {
 
 void OutputLoop(void);
 DWORD WINAPI OutputThreadProc(LPVOID) {
+    g_outputThreadId = GetCurrentThreadId();
     OutputLoop();
     return 0;
 }
@@ -863,6 +867,29 @@ void Start(void) {
     GP_LOG_DEBUG("engine: 读取配置");
     GpConfigLoad(&g_cfg);
 
+    
+
+
+
+
+
+
+
+
+    {
+        wchar_t once_name[80];
+        _snwprintf_s(once_name, _TRUNCATE, L"Local\\GpXInputProxy_v1_%lu",
+                     (unsigned long)GetCurrentProcessId());
+        HANDLE once = CreateMutexW(nullptr, TRUE, once_name);
+        if (once && GetLastError() == ERROR_ALREADY_EXISTS) {
+            g_secondary = TRUE;
+            GP_LOG_INFO("engine: 本进程里已经有一个代理实例在跑 —— 本实例只转发，"
+                        "不合成、不输出、不挂钩（两个实例同时输出会乱震）");
+            return;
+        }
+        
+    }
+
     gplog::SetLevel((gplog::Level)g_cfg.logLevel);
 
     
@@ -893,6 +920,7 @@ void Start(void) {
     }
 
     GP_LOG_DEBUG("engine: 枚举 HID 设备");
+    gphid::SetBluetoothAllowed(g_cfg.hidAllowBluetooth);
     gphid::SetVendorFilter(g_cfg.hidVendorIds, g_cfg.hidVendorIdCount,
                           g_cfg.hidAnyGamepad);
     gphid::Init();
@@ -1031,6 +1059,7 @@ DWORD OnSetState(DWORD controller, WORD left, WORD right, GpFnSetState downstrea
 
     GpPolicy policy = ActivePolicy();
 
+    if (g_secondary) policy = GP_POLICY_PASSTHROUGH;   
     if (policy == GP_POLICY_PASSTHROUGH || !downstream) {
         
 
@@ -1128,6 +1157,24 @@ DWORD OnSetState(DWORD controller, WORD left, WORD right, GpFnSetState downstrea
     vib.wLeftMotorSpeed  = FromRaw(out.rawLeftMotor);
     vib.wRightMotorSpeed = FromRaw(out.rawRightMotor);
     return downstream(controller, &vib);
+}
+
+
+
+
+
+
+
+
+
+
+
+bool SecondaryInstance(void) { return g_secondary != FALSE; }
+
+bool IsSelfWrite(HANDLE hDevice) {
+    if (g_outputThreadId != 0 && GetCurrentThreadId() == g_outputThreadId) return true;
+    if (gphid::IsOurHandle(hDevice)) return true;
+    return false;
 }
 
 bool OnDeviceIoControl(DWORD ioctlCode, LPVOID inBuffer, DWORD inSize) {

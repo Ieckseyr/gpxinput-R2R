@@ -30,6 +30,8 @@ struct Device {
 
 
 void SetVendorFilter(const DWORD* vendorIds, int count, BOOL anyGamepad);
+void SetBluetoothAllowed(BOOL on);
+BOOL IsOurHandle(HANDLE h);
 
 
 
