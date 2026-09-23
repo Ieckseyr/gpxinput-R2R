@@ -28,6 +28,7 @@
 
 #include "MinHook.h"
 #include "gp_log.h"
+#include "gp_engine.h"
 #include "gp_ipc.h"
 #include "gp_ipc_client.h"
 
@@ -301,7 +302,19 @@ HRESULT STDMETHODCALLTYPE HookGetGamepads(IGamepadStatics* self, GamepadView** o
 }
 
 HRESULT STDMETHODCALLTYPE HookPutVibration(IGamepad* self, GamepadVibration value) {
+    
     PublishWgi(value);
+
+    
+
+
+
+
+
+    if (gp_engine::ShouldBlockNativeOutput()) {
+        GP_LOG_DEBUG("wgihook: 拦下原生 put_Vibration（阻断替换模式）");
+        return S_OK;
+    }
 
     if (!g_realPutVibration) return E_FAIL;
     typedef HRESULT (STDMETHODCALLTYPE *Fn)(IGamepad*, GamepadVibration);

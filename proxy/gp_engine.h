@@ -29,6 +29,16 @@ bool OnDeviceIoControl(DWORD ioctlCode, LPVOID inBuffer, DWORD inSize);
 bool IsSelfWrite(HANDLE hDevice);
 
 
+
+
+bool ShouldBlockNativeOutput(void);
+void SetHookCheckHandle(HANDLE h);
+
+
+
+bool OnNativeHidWrite(HANDLE hDevice, const void* buffer, DWORD len);
+
+
 bool IsVibrationIoctl(DWORD code);
 
 

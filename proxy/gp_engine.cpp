@@ -35,6 +35,13 @@ volatile LONG   g_running = 0;
 HANDLE          g_outputThread = nullptr;
 BOOL            g_secondary     = FALSE;   
 volatile DWORD  g_outputThreadId = 0;   
+
+
+
+
+
+
+__declspec(thread) int t_selfOutput = 0;
 HANDLE          g_stopEvent = nullptr;
 
 
@@ -255,6 +262,7 @@ void MonitorShutdown(void) {
 int  FourMotorChannel(void);
 const char* ChannelName(int ch);
 BOOL SendOut(uint32_t controller, const GpFrame* f);
+static BOOL SendOutInner(uint32_t controller, const GpFrame* f);
 
 void MonitorPublish(uint32_t c, DWORD now, const MonSample* s) {
     if (!g_mon || !s || c >= GPMON_MAX_CONTROLLERS) return;
@@ -521,6 +529,15 @@ void MaybeSendXInput(uint32_t controller, const GpFrame* f) {
 
 
 BOOL SendOut(uint32_t controller, const GpFrame* f) {
+    
+
+    t_selfOutput = 1;
+    BOOL rc = SendOutInner(controller, f);
+    t_selfOutput = 0;
+    return rc;
+}
+
+static BOOL SendOutInner(uint32_t controller, const GpFrame* f) {
     int ch = FourMotorChannel();
     BYTE lt = g_cfg.triggers ? f->rawLeftTrigger  : 0;
     BYTE rt = g_cfg.triggers ? f->rawRightTrigger : 0;
@@ -1037,6 +1054,23 @@ void Stop(void) {
     gpshm::Detach();
 }
 
+
+BOOL IsKnownIoctl(DWORD code) {
+    switch (code) {
+    case 0x8000a010:            
+    case 0x002aac08:            
+    case 0xb0000:               
+    case 0xb0001:               
+    case 0xb0002:               
+    case 0xb0003:               
+    case 0xb0004:               
+    case 0xb0011: case 0xb0012: case 0xb0013: case 0xb0014:
+    case 0xb0019:               
+        return TRUE;
+    default: return FALSE;
+    }
+}
+
 bool IsVibrationIoctl(DWORD code) {
     switch (code) {
     case 0x002aac08:   
@@ -1281,14 +1315,60 @@ DWORD OnSetState(DWORD controller, WORD left, WORD right, GpFnSetState downstrea
 
 bool SecondaryInstance(void) { return g_secondary != FALSE; }
 
+
+
+volatile HANDLE g_hookCheckHandle = nullptr;
+
+void SetHookCheckHandle(HANDLE h) { g_hookCheckHandle = h; }
+
+bool ShouldBlockNativeOutput(void) {
+    if (ActivePolicy() != GP_POLICY_REPLACE) return false;
+    return !IsSelfWrite(nullptr);      
+}
+
+bool OnNativeHidWrite(HANDLE hDevice, const void* buffer, DWORD len) {
+    if (!gphid::IsOurHandle(hDevice)) return false;
+    if (IsSelfWrite(hDevice)) return false;          
+
+    
+
+
+    if (len >= 6) {
+        const BYTE* b = (const BYTE*)buffer;
+        GpOnGameFrame(0, GetTickCount(), b[4], b[5]);
+        GP_LOG_DEBUG("engine: 采信原生 HID 写 LM=%u RM=%u LT=%u RT=%u（%u 字节）",
+                     b[4], b[5], b[2], b[3], len);
+    }
+    return ShouldBlockNativeOutput();
+}
+
 bool IsSelfWrite(HANDLE hDevice) {
+    (void)hDevice;
+    if (t_selfOutput) return true;                  
     if (g_outputThreadId != 0 && GetCurrentThreadId() == g_outputThreadId) return true;
-    if (gphid::IsOurHandle(hDevice)) return true;
     return false;
 }
 
 bool OnDeviceIoControl(DWORD ioctlCode, LPVOID inBuffer, DWORD inSize) {
-    if (!IsVibrationIoctl(ioctlCode)) return false;
+    if (!IsVibrationIoctl(ioctlCode)) {
+        
+
+
+
+        if (gphid::IsOurHandle(g_hookCheckHandle) && !IsKnownIoctl(ioctlCode)) {
+            static DWORD seen[16] = {0};
+            static int   seenN = 0;
+            BOOL dup = FALSE;
+            for (int i = 0; i < seenN; ++i) if (seen[i] == ioctlCode) { dup = TRUE; break; }
+            if (!dup) {
+                if (seenN < 16) seen[seenN++] = ioctlCode;
+                GP_LOG_INFO("engine: 发往手柄设备的未识别 IOCTL 0x%08X（%u 字节）"
+                            "—— 若手柄仍有原生震动残留，就是这条通道，请把这行发我",
+                            ioctlCode, inSize);
+            }
+        }
+        return false;
+    }
 
     
 

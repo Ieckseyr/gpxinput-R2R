@@ -2,6 +2,7 @@
 #include "gp_hooks.h"
 #include "gp_wgihook.h"
 #include "gp_engine.h"
+#include "gp_hid.h"
 #include "gp_config.h"
 #include "gp_log.h"
 
@@ -16,6 +17,15 @@ bool         g_installed  = false;
 typedef BOOL (WINAPI *FnDeviceIoControl)(HANDLE, DWORD, LPVOID, DWORD,
                                          LPVOID, DWORD, LPDWORD, LPOVERLAPPED);
 FnDeviceIoControl g_realDeviceIoControl = nullptr;
+
+
+
+
+
+
+
+typedef BOOL (WINAPI *FnWriteFile)(HANDLE, LPCVOID, DWORD, LPDWORD, LPOVERLAPPED);
+FnWriteFile g_realWriteFile = nullptr;
 
 
 
@@ -64,6 +74,20 @@ DWORD WINAPI DetourXInputSetState(DWORD dwUserIndex, GpXInputVibration* pVibrati
     return gp_engine::OnSetState(dwUserIndex, l, r, g_trampoline);
 }
 
+BOOL WINAPI DetourWriteFile(HANDLE hFile, LPCVOID lpBuffer, DWORD nBytes,
+                            LPDWORD lpWritten, LPOVERLAPPED lpOverlapped) {
+    if (!gphid::IsOurHandle(hFile)) {
+        return g_realWriteFile(hFile, lpBuffer, nBytes, lpWritten, lpOverlapped);
+    }
+
+    
+    if (gp_engine::OnNativeHidWrite(hFile, lpBuffer, nBytes)) {
+        if (lpWritten) *lpWritten = nBytes;   
+        return TRUE;
+    }
+    return g_realWriteFile(hFile, lpBuffer, nBytes, lpWritten, lpOverlapped);
+}
+
 BOOL WINAPI DetourDeviceIoControl(HANDLE hDevice, DWORD dwIoControlCode,
                                   LPVOID lpInBuffer, DWORD nInBufferSize,
                                   LPVOID lpOutBuffer, DWORD nOutBufferSize,
@@ -72,6 +96,7 @@ BOOL WINAPI DetourDeviceIoControl(HANDLE hDevice, DWORD dwIoControlCode,
 
     
 
+    gp_engine::SetHookCheckHandle(hDevice);
     if (!lpOverlapped && !gp_engine::IsSelfWrite(hDevice) &&
         gp_engine::OnDeviceIoControl(dwIoControlCode, lpInBuffer, nInBufferSize)) {
         if (lpBytesReturned) *lpBytesReturned = 0;
@@ -181,6 +206,11 @@ int InstallSteamProbe(void) {
     }
 
     GP_LOG_INFO("steam: Steam 接口探针已安装 %d 个挂钩", n);
+    if (n > 0) {
+        GP_LOG_INFO("steam: 注意 —— 本进程用到了 Steam 输入接口。**请在该游戏的 Steam "
+                    "属性里关闭 Steam 输入**，否则原生震动会经 Steam 直达手柄，"
+                    "绕过我们的拦截（这一路我们不挂钩）");
+    }
     return n;
 }
 
@@ -252,6 +282,23 @@ bool Install(void) {
         }
     } else {
         GP_LOG_INFO("hooks: 按配置跳过 DeviceIoControl 挂钩");
+    }
+
+    
+
+
+
+    {
+        void* target = ResolveKernel32("WriteFile");
+        if (target) {
+            st = MH_CreateHook(target, (LPVOID)&DetourWriteFile, (LPVOID*)&g_realWriteFile);
+            if (st == MH_OK) {
+                ++created;
+                GP_LOG_INFO("hooks: 已挂钩 WriteFile @ %p (kernel32) —— 原生 HID 写也会被拦", target);
+            } else {
+                GP_LOG_ERROR("hooks: 挂钩 WriteFile 失败: %s", MhErrorName(st));
+            }
+        }
     }
 
     
