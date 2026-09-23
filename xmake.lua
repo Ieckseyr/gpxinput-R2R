@@ -55,6 +55,7 @@ local proxy_sources = {
     "proxy/gp_ipc_client.cpp",
     "proxy/gp_hid.cpp",
     "proxy/gp_wgi.cpp",
+    "proxy/gp_wgihook.cpp",
     "proxy/gp_capture.cpp",
     "proxy/gp_haptics.cpp",
     "proxy/gp_gamestate.cpp",
@@ -292,3 +293,79 @@ target("gp_protosniff")
     add_files("tools/gp_protosniff/gpsniff_decode.cpp")
     add_syslinks("setupapi", "hid")
     set_targetdir("$(builddir)/tools")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+target("gp_vibsend")
+    set_kind("binary")
+    add_files("tools/gp_vibsend/gp_vibsend.cpp")
+    add_syslinks("setupapi", "hid", "runtimeobject")
+    set_targetdir("$(builddir)/tools")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+local padlab_sources = {
+    "tools/padlab/padlab.cpp",
+    "tools/padlab/padlab_xi.cpp",
+}
+
+local function add_padlab(name, main_src, family_src, variant, links)
+    target(name)
+        set_kind("binary")
+        set_filename(name .. ".exe")
+        add_files(main_src)
+        add_files(padlab_sources)
+        add_includedirs("tools/padlab")
+        add_syslinks("setupapi", "hid")
+        if links then
+            for _, l in ipairs(links) do add_syslinks(l) end
+        end
+        if variant then
+            add_defines("PADLAB_VARIANT=" .. variant)
+        end
+        set_targetdir("$(builddir)/tools/padlab")
+    target_end()
+end
+
+
+add_padlab("padlab_xbox360",    "tools/padlab/xbox_family.cpp", nil, 1, {"runtimeobject"})
+add_padlab("padlab_xboxone",    "tools/padlab/xbox_family.cpp", nil, 2, {"runtimeobject"})
+add_padlab("padlab_xboxseries", "tools/padlab/xbox_family.cpp", nil, 3, {"runtimeobject"})
+add_padlab("padlab_xboxelite",  "tools/padlab/xbox_family.cpp", nil, 4, {"runtimeobject"})
+
+
+add_padlab("padlab_xbox_licensed", "tools/padlab/xbox_licensed.cpp", nil, nil, {"runtimeobject"})
+
+
+add_padlab("padlab_ds3",       "tools/padlab/sony_family.cpp", nil, 1, nil)
+add_padlab("padlab_ds4",       "tools/padlab/sony_family.cpp", nil, 2, nil)
+add_padlab("padlab_dualsense", "tools/padlab/sony_family.cpp", nil, 3, nil)
+
+
+add_padlab("padlab_ns_procon", "tools/padlab/ns_family.cpp", nil, 1, nil)
+add_padlab("padlab_ns_joycon", "tools/padlab/ns_family.cpp", nil, 2, nil)
