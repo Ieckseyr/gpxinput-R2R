@@ -19,6 +19,12 @@ struct Device {
     BOOL    usable;               
     BOOL    gamepadUsage;         
     BOOL    trustedFormat;        
+
+    
+
+
+
+    int     ioctlKind;
 };
 
 
@@ -60,6 +66,25 @@ bool Send(int index, BYTE leftMotor, BYTE rightMotor,
 
 bool SendMapped(int controllerIndex, BYTE leftMotor, BYTE rightMotor,
                 BYTE leftTrigger, BYTE rightTrigger, int pulseMode);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int  IoctlCount(void);
+bool SendIoctlAll(BYTE leftMotor, BYTE rightMotor,
+                  BYTE leftTrigger, BYTE rightTrigger, int pulseMode);
 
 }  
 
