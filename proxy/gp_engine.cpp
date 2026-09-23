@@ -1352,10 +1352,45 @@ bool OnNativeHidWrite(HANDLE hDevice, const void* buffer, DWORD len) {
     return ShouldBlockNativeOutput();
 }
 
+
+
+
+
+
+bool IsOurModuleAddress(void* addr) {
+    static uintptr_t base = 0;
+    static size_t    size = 0;
+    if (base == 0) {
+        HMODULE self = nullptr;
+        if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                (LPCWSTR)(const void*)&IsOurModuleAddress, &self)) {
+            return false;
+        }
+        base = (uintptr_t)self;
+        
+        const BYTE* p = (const BYTE*)self;
+        if (p && *(const WORD*)p == 0x5A4D) {                 
+            DWORD e = *(const DWORD*)(p + 0x3C);
+            if (e && e < 0x1000) {
+                const BYTE* nt = p + e;
+                if (*(const DWORD*)nt == 0x00004550) {        
+                    size = *(const DWORD*)(nt + 0x18 + 0x38); 
+                }
+            }
+        }
+    }
+    if (base == 0 || size == 0) return false;
+    uintptr_t a = (uintptr_t)addr;
+    return a >= base && a < base + size;
+}
+
 bool IsSelfWrite(HANDLE hDevice) {
     (void)hDevice;
     if (t_selfOutput) return true;                  
     if (g_outputThreadId != 0 && GetCurrentThreadId() == g_outputThreadId) return true;
+    
+    if (IsOurModuleAddress(_ReturnAddress())) return true;
     return false;
 }
 

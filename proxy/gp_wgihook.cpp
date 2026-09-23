@@ -104,6 +104,7 @@ volatile LONG g_lockReady = 0;
 
 
 void* g_realPutVibration = nullptr;
+int   g_blockLogCount = 0;
 
 void EnsureLock(void) {
     if (InterlockedCompareExchange(&g_lockReady, 1, 0) == 0) {
@@ -311,8 +312,13 @@ HRESULT STDMETHODCALLTYPE HookPutVibration(IGamepad* self, GamepadVibration valu
 
 
 
-    if (gp_engine::ShouldBlockNativeOutput()) {
-        GP_LOG_DEBUG("wgihook: 拦下原生 put_Vibration（阻断替换模式）");
+    
+
+
+    if (!gp_engine::IsOurModuleAddress(_ReturnAddress()) &&
+        gp_engine::ShouldBlockNativeOutput()) {
+        if (g_blockLogCount < 8) { ++g_blockLogCount;
+            GP_LOG_INFO("wgihook: 拦下原生 put_Vibration（阻断替换模式）"); }
         return S_OK;
     }
 
