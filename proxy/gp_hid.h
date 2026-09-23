@@ -51,6 +51,9 @@ int Rescan(void);
 int Count(void);
 
 
+void EnsureScanned(void);
+
+
 const wchar_t* Describe(int index);
 
 

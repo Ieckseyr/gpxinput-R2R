@@ -616,6 +616,7 @@ void OutputLoop(void) {
         
 
         gpwgi::Tick();
+        gphid::EnsureScanned();      
         {
             static int lastCh = -1;
             int ch = FourMotorChannel();

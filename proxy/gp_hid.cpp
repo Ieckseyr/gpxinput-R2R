@@ -440,6 +440,24 @@ int Rescan(void) {
 
 int Count(void) { return g_count; }
 
+
+
+
+
+
+void EnsureScanned(void) {
+    static DWORD lastTry = 0;
+    if (g_count > 0) return;
+    DWORD now = GetTickCount();
+    if (lastTry != 0 && (DWORD)(now - lastTry) < 2000) return;
+    lastTry = now;
+
+    int n = Init();
+    if (n > 0) {
+        GP_LOG_INFO("gphid: 重扫到 %d 个可用接口（启动时手柄还没就绪？）", n);
+    }
+}
+
 const wchar_t* Describe(int index) {
     if (index < 0 || index >= g_count) return L"";
     return g_devices[index].path;
