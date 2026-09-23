@@ -1327,6 +1327,11 @@ bool SecondaryInstance(void) { return g_secondary != FALSE; }
 
 
 
+
+bool PolicyIsReplace(void) { return ActivePolicy() == GP_POLICY_REPLACE; }
+
+
+
 volatile HANDLE g_hookCheckHandle = nullptr;
 
 void SetHookCheckHandle(HANDLE h) { g_hookCheckHandle = h; }

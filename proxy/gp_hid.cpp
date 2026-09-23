@@ -368,10 +368,31 @@ void SetBluetoothAllowed(BOOL on) { g_allowBluetooth = on; }
 
 
 
+
+
+
+
+
+
+HANDLE         g_snap[kMaxDevices];
+volatile LONG  g_snapCount = 0;
+
+void RefreshSnapshot(void) {
+    LONG n = 0;
+    for (int i = 0; i < g_count && i < kMaxDevices; ++i) {
+        if (g_devices[i].hDevice && g_devices[i].hDevice != INVALID_HANDLE_VALUE) {
+            g_snap[n++] = g_devices[i].hDevice;
+        }
+    }
+    InterlockedExchange(&g_snapCount, n);
+}
+
 BOOL IsOurHandle(HANDLE h) {
     if (!h || h == INVALID_HANDLE_VALUE) return FALSE;
-    for (int i = 0; i < g_count && i < kMaxDevices; ++i) {
-        if (g_devices[i].hDevice == h) return TRUE;
+    LONG n = g_snapCount;
+    if (n > kMaxDevices) n = kMaxDevices;
+    for (LONG i = 0; i < n; ++i) {
+        if (g_snap[i] == h) return TRUE;
     }
     return FALSE;
 }
@@ -422,6 +443,8 @@ int Init(void) {
         GP_LOG_INFO("gphid: 要诊断具体是哪种情况，用 gp_vibtest.exe --scan。");
     }
 
+    RefreshSnapshot();
+    RefreshSnapshot();
     LeaveCriticalSection(&g_lock);
     return g_count;
 }

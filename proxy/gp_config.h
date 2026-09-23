@@ -99,6 +99,10 @@ struct GpProxyConfig {
     
 
     BOOL        hidAllowBluetooth;
+
+    
+
+    BOOL        hookWriteFile;
     int         hidVendorIdCount;
 
     

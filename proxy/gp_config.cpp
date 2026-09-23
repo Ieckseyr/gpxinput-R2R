@@ -159,6 +159,7 @@ void GpConfigDefaults(GpProxyConfig* cfg) {
     
 
     cfg->hidAllowBluetooth    = FALSE;
+    cfg->hookWriteFile        = TRUE;
     cfg->hidVendorIdCount     = 1;
     cfg->hidAnyGamepad        = FALSE;
     cfg->iniFound             = FALSE;
@@ -434,6 +435,7 @@ void GpConfigLoad(GpProxyConfig* cfg) {
     }
 
     
+
 
 
     {

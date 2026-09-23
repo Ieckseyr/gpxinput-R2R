@@ -304,6 +304,9 @@ HRESULT STDMETHODCALLTYPE HookGetGamepads(IGamepadStatics* self, GamepadView** o
 
 HRESULT STDMETHODCALLTYPE HookPutVibration(IGamepad* self, GamepadVibration value) {
     
+
+    __try {
+    
     PublishWgi(value);
 
     
@@ -320,6 +323,10 @@ HRESULT STDMETHODCALLTYPE HookPutVibration(IGamepad* self, GamepadVibration valu
         if (g_blockLogCount < 8) { ++g_blockLogCount;
             GP_LOG_INFO("wgihook: 拦下原生 put_Vibration（阻断替换模式）"); }
         return S_OK;
+    }
+
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        
     }
 
     if (!g_realPutVibration) return E_FAIL;

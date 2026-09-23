@@ -31,6 +31,8 @@ bool IsSelfWrite(HANDLE hDevice);
 
 
 
+
+bool PolicyIsReplace(void);
 bool ShouldBlockNativeOutput(void);
 bool IsOurModuleAddress(void* addr);
 void SetHookCheckHandle(HANDLE h);

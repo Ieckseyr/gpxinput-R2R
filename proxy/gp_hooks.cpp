@@ -74,16 +74,29 @@ DWORD WINAPI DetourXInputSetState(DWORD dwUserIndex, GpXInputVibration* pVibrati
     return gp_engine::OnSetState(dwUserIndex, l, r, g_trampoline);
 }
 
+
+
+
+
+
+
+
 BOOL WINAPI DetourWriteFile(HANDLE hFile, LPCVOID lpBuffer, DWORD nBytes,
                             LPDWORD lpWritten, LPOVERLAPPED lpOverlapped) {
-    if (!gphid::IsOurHandle(hFile)) {
+    if (!gp_engine::PolicyIsReplace() || !hFile) {
+        return g_realWriteFile(hFile, lpBuffer, nBytes, lpWritten, lpOverlapped);
+    }
+    if (!gphid::IsOurHandle(hFile) || !lpBuffer || nBytes < 6) {
         return g_realWriteFile(hFile, lpBuffer, nBytes, lpWritten, lpOverlapped);
     }
 
-    
-    if (gp_engine::OnNativeHidWrite(hFile, lpBuffer, nBytes)) {
-        if (lpWritten) *lpWritten = nBytes;   
-        return TRUE;
+    __try {
+        if (gp_engine::OnNativeHidWrite(hFile, lpBuffer, nBytes)) {
+            if (lpWritten) *lpWritten = nBytes;   
+            return TRUE;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        
     }
     return g_realWriteFile(hFile, lpBuffer, nBytes, lpWritten, lpOverlapped);
 }
@@ -97,10 +110,14 @@ BOOL WINAPI DetourDeviceIoControl(HANDLE hDevice, DWORD dwIoControlCode,
     
 
     gp_engine::SetHookCheckHandle(hDevice);
+    __try {
     if (!lpOverlapped && !gp_engine::IsSelfWrite(hDevice) &&
         gp_engine::OnDeviceIoControl(dwIoControlCode, lpInBuffer, nInBufferSize)) {
         if (lpBytesReturned) *lpBytesReturned = 0;
         return TRUE;   
+    }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        
     }
     return g_realDeviceIoControl(hDevice, dwIoControlCode, lpInBuffer, nInBufferSize,
                                  lpOutBuffer, nOutBufferSize, lpBytesReturned, lpOverlapped);
@@ -288,7 +305,7 @@ bool Install(void) {
 
 
 
-    {
+    if (cfg.hookWriteFile) {
         void* target = ResolveKernel32("WriteFile");
         if (target) {
             st = MH_CreateHook(target, (LPVOID)&DetourWriteFile, (LPVOID*)&g_realWriteFile);
