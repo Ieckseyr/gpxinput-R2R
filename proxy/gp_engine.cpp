@@ -486,7 +486,16 @@ int FourMotorChannel(void) {
 
     
 
+
+
+
+
+
+
+
+
     if (gphid::IoctlCount() > 0) return 4;
+    if (gphid::Count() > 0)      return 2;
     return WgiAvailable() ? 1 : 0;
 }
 
