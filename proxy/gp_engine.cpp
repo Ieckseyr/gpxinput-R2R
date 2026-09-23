@@ -474,7 +474,11 @@ int FourMotorChannel(void) {
     if (g_cfg.output == 1) return 0;                       
     if (g_cfg.output == 2) return gphid::Count() > 0 ? 2 : 0;
     if (g_cfg.output == 3) return WgiAvailable() ? 3 : 0;
+    if (g_cfg.output == 4) return gphid::IoctlCount() > 0 ? 4 : 0;
+
     
+
+    if (gphid::IoctlCount() > 0) return 4;
     return WgiAvailable() ? 1 : 0;
 }
 
@@ -483,6 +487,7 @@ const char* ChannelName(int ch) {
     case 1:  return "XInput体感 + Windows.Gaming.Input扳机（官方双通道）";
     case 2:  return "HID 报告(四电机，显式选择)";
     case 3:  return "Windows.Gaming.Input(四电机，仅它)";
+    case 4:  return "XInput体感 + 直写驱动IOCTL扳机（Xbox 协议）";
     default: return "XInput(只有两个马达，扳机折算进体感)";
     }
 }
@@ -526,7 +531,19 @@ BOOL SendOut(uint32_t controller, const GpFrame* f) {
     }
     if (ch == 2 && Emit(controller, f, TRUE)) return TRUE;
 
-    if (ch == 1) {
+    if (ch == 4) {
+        
+
+
+
+
+
+        if (!gphid::SendIoctlAll(f->rawLeftMotor, f->rawRightMotor, lt, rt, PulseMode())) {
+            
+
+            if (WgiAvailable()) gpwgi::Set(f->rawLeftMotor, f->rawRightMotor, lt, rt);
+        }
+    } else if (ch == 1) {
         
 
 
@@ -589,6 +606,8 @@ void OutputLoop(void) {
                         trigCh = "HID 原始报告"; break;
                 case 3: bodyCh = "Windows.Gaming.Input";
                         trigCh = "Windows.Gaming.Input"; break;
+                case 4: bodyCh = "XInput(官方，全手柄通吃)";
+                        trigCh = "直写驱动 IOCTL（Xbox 协议）"; break;
                 default: break;
                 }
                 if (ch == 0) {

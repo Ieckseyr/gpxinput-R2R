@@ -94,6 +94,18 @@ BOOL ProbeReportId(HANDLE h, BYTE reportId) {
 }
 
 
+
+
+
+int ProbeIoctl(HANDLE h) {
+    if (!h || h == INVALID_HANDLE_VALUE) return 0;
+    BYTE payload[7] = {0};
+    DWORD ret = 0;
+    if (DeviceIoControl(h, 0x002aac08, payload, 7, nullptr, 0, &ret, nullptr)) return 1;
+    if (DeviceIoControl(h, 0x8000a010, payload, 4, nullptr, 0, &ret, nullptr)) return 2;
+    return 0;
+}
+
 BOOL OpenOne(const wchar_t* path, Device* out) {
     HANDLE h = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                            nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
@@ -120,7 +132,22 @@ BOOL OpenOne(const wchar_t* path, Device* out) {
         }
         HidD_FreePreparsedData(preparsed);
     }
-    if (haveCaps && caps.OutputReportByteLength < 9) {
+    
+
+
+    BOOL reportTooShort = (haveCaps && caps.OutputReportByteLength < 9);
+    if (reportTooShort) {
+        HIDD_ATTRIBUTES a = {0};
+        a.Size = sizeof(a);
+        if (HidD_GetAttributes(h, &a) && g_allowBluetooth) {
+            
+            GP_LOG_DEBUG("gphid: 跳过 VID=%04X PID=%04X —— 输出报告只有 %u 字节",
+                         a.VendorID, a.ProductID, caps.OutputReportByteLength);
+            CloseHandle(h);
+            return FALSE;
+        }
+    }
+    if (FALSE && haveCaps && caps.OutputReportByteLength < 9) {
         
 
 
@@ -173,18 +200,33 @@ BOOL OpenOne(const wchar_t* path, Device* out) {
     BYTE first  = out->bluetooth ? 0x03 : 0x00;
     BYTE second = out->bluetooth ? 0x00 : 0x03;
 
-    if (ProbeReportId(h, first)) {
+    if (!reportTooShort && ProbeReportId(h, first)) {
         out->reportId = first;
         out->usable = TRUE;
-    } else if (ProbeReportId(h, second)) {
+    } else if (!reportTooShort && ProbeReportId(h, second)) {
         out->reportId = second;
         out->usable = TRUE;
         GP_LOG_DEBUG("gphid: 报告 ID 与连接方式不符，实测可用的是 0x%02X", second);
-    } else {
+    } else if (!reportTooShort) {
         out->reportId = first;
         out->usable = FALSE;
         GP_LOG_INFO("gphid: 找到了手柄接口但写不进去（多半是没有管理员权限）: %s",
                     gplog::W(path));
+    } else {
+        out->reportId = 0;
+        out->usable = FALSE;
+    }
+
+    
+
+
+    out->ioctlKind = ProbeIoctl(h);
+    if (out->ioctlKind != 0) {
+        DWORD zero7[7] = {0};
+        (void)zero7;
+        GP_LOG_INFO("gphid:   IOCTL 通道可用：%s（%s）",
+                    out->ioctlKind == 1 ? "Steam 7 字节（四电机）" : "微软 4 字节（只有体感）",
+                    gplog::W(out->bluetooth ? L"蓝牙" : L"有线/2.4G"));
     }
 
     return TRUE;
@@ -399,6 +441,55 @@ bool SendMapped(int controllerIndex, BYTE leftMotor, BYTE rightMotor,
         return Send(idx, leftMotor, rightMotor, leftTrigger, rightTrigger, pulseMode);
     }
     return true;
+}
+
+
+int IoctlCount(void) {
+    int n = 0;
+    for (int i = 0; i < g_count && i < kMaxDevices; ++i) {
+        if (g_devices[i].ioctlKind != 0) ++n;
+    }
+    return n;
+}
+
+
+bool SendIoctlAll(BYTE leftMotor, BYTE rightMotor,
+                  BYTE leftTrigger, BYTE rightTrigger, int pulseMode) {
+    for (int i = 0; i < g_count && i < kMaxDevices; ++i) {
+        Device& d = g_devices[i];
+        if (d.ioctlKind == 0) continue;
+        if (!d.hDevice || d.hDevice == INVALID_HANDLE_VALUE) continue;
+
+        DWORD ret = 0;
+        BOOL ok = FALSE;
+        if (d.ioctlKind == 1) {
+            
+
+            BYTE p7[7];
+            p7[0] = leftTrigger;
+            p7[1] = rightTrigger;
+            p7[2] = leftMotor;
+            p7[3] = rightMotor;
+            p7[4] = pulseMode ? 128 : 255;   
+            p7[5] = pulseMode ? 128 : 0;     
+            p7[6] = 255;                     
+            ok = DeviceIoControl(d.hDevice, 0x002aac08, p7, 7,
+                                 nullptr, 0, &ret, nullptr);
+        } else {
+            
+
+            BYTE p4[4] = {0, 0, leftMotor, rightMotor};
+            ok = DeviceIoControl(d.hDevice, 0x8000a010, p4, 4,
+                                 nullptr, 0, &ret, nullptr);
+        }
+        if (ok) return true;
+
+        
+        DWORD err = GetLastError();
+        GP_LOG_INFO("gphid: IOCTL 直写失败 (err=%lu)，改用其它通道承载扳机", err);
+        d.ioctlKind = 0;
+    }
+    return false;
 }
 
 }  
