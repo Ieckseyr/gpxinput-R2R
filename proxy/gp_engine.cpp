@@ -557,27 +557,30 @@ static BOOL SendOutInner(uint32_t controller, const GpFrame* f) {
     }
     if (ch == 2 && Emit(controller, f, TRUE)) return TRUE;
 
+    
+
+
+
+
+
+
+
+
+
+
+
+
+    MaybeSendXInput(controller, f);
+
     if (ch == 4) {
-        
-
-
-
-
-
         if (!gphid::SendIoctlAll(f->rawLeftMotor, f->rawRightMotor, lt, rt, PulseMode())) {
             
 
             if (WgiAvailable()) gpwgi::Set(f->rawLeftMotor, f->rawRightMotor, lt, rt);
         }
     } else if (ch == 1) {
-        
-
-
-
-
         gpwgi::Set(f->rawLeftMotor, f->rawRightMotor, lt, rt);
     }
-    MaybeSendXInput(controller, f);
     return TRUE;
 }
 
