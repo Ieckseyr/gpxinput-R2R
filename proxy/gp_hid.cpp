@@ -45,6 +45,26 @@ BOOL  g_anyGamepad = FALSE;
 
 BOOL  g_allowBluetooth = FALSE;
 
+
+
+
+
+
+
+BOOL IsXboxPadPid(USHORT pid) {
+    switch (pid) {
+    case 0x028E: case 0x028F: case 0x0719:            
+    case 0x02D1: case 0x02DD: case 0x02E0:            
+    case 0x02EA: case 0x02FD:
+    case 0x02E3:                                      
+    case 0x0B00: case 0x0B05:                         
+    case 0x0B0A: case 0x0B12: case 0x0B13:            
+        return TRUE;
+    default:
+        return FALSE;                                 
+    }
+}
+
 BOOL VendorAllowed(USHORT vid) {
     if (g_anyGamepad) return TRUE;
     for (int i = 0; i < g_vendorIdCount; ++i) {
@@ -168,6 +188,11 @@ BOOL OpenOne(const wchar_t* path, Device* out) {
 
     
 
+    
+
+
+    BOOL xboxPad = (attrs.VendorID == 0x045E) && IsXboxPadPid(attrs.ProductID);
+
     if (!VendorAllowed(attrs.VendorID)) {
         if (!(g_anyGamepad && gamepadUsage)) {
             CloseHandle(h);
@@ -220,7 +245,26 @@ BOOL OpenOne(const wchar_t* path, Device* out) {
     
 
 
+    
+
+
+    if (xboxPad && (h == INVALID_HANDLE_VALUE || !h)) {
+        h = CreateFileW(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                        nullptr, OPEN_EXISTING, 0, nullptr);
+    }
+
     out->ioctlKind = ProbeIoctl(h);
+
+    if (out->ioctlKind == 0 && !out->usable) {
+        
+
+        if (xboxPad) {
+            GP_LOG_INFO("gphid: 接口 VID=%04X PID=%04X 两条路都不通（多半是只读的"
+                        "DInput 兼容节点），跳过", attrs.VendorID, attrs.ProductID);
+        }
+        CloseHandle(h);
+        return FALSE;
+    }
     if (out->ioctlKind != 0) {
         DWORD zero7[7] = {0};
         (void)zero7;
@@ -272,6 +316,37 @@ void EnumerateInto(Device* list, int* count, int maxCount) {
         Device d;
         memset(&d, 0, sizeof(d));
         d.hDevice = INVALID_HANDLE_VALUE;
+
+        
+
+        {
+            static int sSeen = 0;
+            if (sSeen < 24) {
+                HANDLE probe = CreateFileW(detail->DevicePath, 0,
+                                           FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                           nullptr, OPEN_EXISTING, 0, nullptr);
+                if (probe != INVALID_HANDLE_VALUE) {
+                    HIDD_ATTRIBUTES a = {0};
+                    a.Size = sizeof(a);
+                    HIDP_CAPS c = {0};
+                    PHIDP_PREPARSED_DATA pp = nullptr;
+                    BOOL caps = FALSE;
+                    if (HidD_GetPreparsedData(probe, &pp)) {
+                        caps = (HidP_GetCaps(pp, &c) == HIDP_STATUS_SUCCESS);
+                        HidD_FreePreparsedData(pp);
+                    }
+                    if (HidD_GetAttributes(probe, &a)) {
+                        ++sSeen;
+                        GP_LOG_INFO("gphid: 接口[%d] VID=%04X PID=%04X%s 用途=%04X:%04X 输出报告=%u 字节",
+                                    sSeen, a.VendorID, a.ProductID,
+                                    IsXboxPadPid(a.ProductID) ? "(Xbox手柄)" : "",
+                                    caps ? c.UsagePage : 0, caps ? c.Usage : 0,
+                                    caps ? c.OutputReportByteLength : 0);
+                    }
+                    CloseHandle(probe);
+                }
+            }
+        }
 
         
         SetupDiGetDeviceInstanceIdW(devInfo, &devData, d.instanceId, 512, nullptr);
