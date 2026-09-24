@@ -155,4 +155,20 @@ inline uint64_t rdr2_call3(uint64_t hash, uint64_t a1, uint64_t a2, uint64_t a3)
     return r ? *r : 0;
 }
 
+
+inline uint64_t rdr2_callArgs(uint64_t hash, const uint64_t* a, int n) {
+    sh::nativeInit(hash);
+    for (int i = 0; i < n; ++i) sh::nativePush64(a[i]);
+    uint64_t* r = sh::nativeCall();
+    return r ? *r : 0;
+}
+
+
+
+inline uint64_t* rdr2_callArgsPtr(uint64_t hash, const uint64_t* a, int n) {
+    sh::nativeInit(hash);
+    for (int i = 0; i < n; ++i) sh::nativePush64(a[i]);
+    return sh::nativeCall();
+}
+
 #endif 

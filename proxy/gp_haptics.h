@@ -196,6 +196,34 @@ struct GpHapticsSettings {
 
 
     float mountLandRise;
+
+    
+
+
+    BOOL  wagonEnable;
+    float wagonGain;
+    int   wagonMinPeriodMs;    
+    int   wagonMaxPeriodMs;    
+    float wagonSpeedLow;       
+    float wagonSpeedHigh;      
+    float wagonTrigGain;       
+    float wagonBodyBase;       
+
+    
+    BOOL  trainRideEnable;
+    float trainRideGain;
+    int   trainRideMinPeriodMs;
+    int   trainRideMaxPeriodMs;
+    float trainRideTrigGain;
+    float trainRideBodyBase;
+
+    
+
+    BOOL  trainPassEnable;
+    float trainPassGain;
+    float trainPassRadius;      
+    float trainPassApproachRef; 
+    int   trainPassEnvMs;       
     int   spookEnvMs;
     float spookAccel;
     int   mountLandEnvMs;

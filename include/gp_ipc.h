@@ -45,7 +45,10 @@ typedef enum GpSource {
     GP_SRC_STEAM_IOCTL = 2,  
     GP_SRC_MS_IOCTL    = 3,  
     GP_SRC_HID_WRITE   = 4,  
-    GP_SRC_PROCESSOR   = 5   
+    GP_SRC_PROCESSOR   = 5,  
+    
+
+    GP_SRC_WGI         = 6
 } GpSource;
 
 

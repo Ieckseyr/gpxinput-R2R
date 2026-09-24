@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "sh_rdr2.h"
 #include "rdr2_natives.h"
@@ -403,6 +404,101 @@ void Tick(void) {
 
     
 
+
+
+
+
+
+
+    {
+        g_state->inTrain       = 0;
+        g_state->vehicleModel  = 0;
+        g_state->vehicleSpeed  = 0.0f;
+        g_state->trainNearby   = 0;
+        g_state->trainDist     = 0.0f;
+        g_state->trainApproach = 0.0f;
+
+        g_step = 20;
+        int veh = (int)rdr2_call2(N_GET_VEHICLE_PED_IS_IN, (uint64_t)(int64_t)ped, 0);
+        if (veh != 0) {
+            g_state->inVehicle = 1;
+            g_step = 21;
+            g_state->vehicleModel = (uint32_t)rdr2_call1(N_GET_ENTITY_MODEL, (uint64_t)(int64_t)veh);
+            g_step = 22;
+            uint64_t sb = rdr2_call1(N_GET_ENTITY_SPEED, (uint64_t)(int64_t)veh);
+            float vs; memcpy(&vs, &sb, sizeof(vs));
+            g_state->vehicleSpeed = (vs == vs && vs >= 0.0f && vs < 200.0f) ? vs : 0.0f;
+        }
+        g_step = 23;
+        if (rdr2_call1(N_IS_PED_IN_ANY_TRAIN, (uint64_t)(int64_t)ped) != 0 ||
+            rdr2_call1(N_IS_PLAYER_RIDING_TRAIN, 0) != 0) {
+            g_state->inTrain = 1;
+        }
+
+        
+
+
+        g_step = 24;
+        {
+            uint64_t ca[3] = { (uint64_t)(int64_t)ped, 1, 0 };   
+            uint64_t* v3 = rdr2_callArgsPtr(N_GET_ENTITY_COORDS, ca, 3);
+            if (v3) {
+                float px, py, pz;
+                memcpy(&px, &((float*)v3)[0], 4);
+                memcpy(&py, &((float*)v3)[1], 4);
+                memcpy(&pz, &((float*)v3)[2], 4);
+                if (px == px && py == py && pz == pz) {
+                    g_step = 25;
+                    uint64_t qa[6];
+                    float fx = px, fy = py, fz = pz;
+                    memcpy(&qa[0], &fx, 4); memcpy(&qa[1], &fy, 4); memcpy(&qa[2], &fz, 4);
+                    float rad = 60.0f;  memcpy(&qa[3], &rad, 4);   
+                    qa[4] = 0;                                     
+                    qa[5] = 0;
+                    int nearVeh = (int)rdr2_callArgs(N_GET_CLOSEST_VEHICLE, qa, 6);   
+                    if (nearVeh != 0 && nearVeh != veh) {
+                        g_step = 26;
+                        uint32_t nm = (uint32_t)rdr2_call1(N_GET_ENTITY_MODEL, (uint64_t)(int64_t)nearVeh);
+                        if (rdr2_call1(N_IS_THIS_MODEL_A_TRAIN, (uint64_t)nm) != 0) {
+                            
+                            uint64_t na[3] = { (uint64_t)(int64_t)nearVeh, 1, 0 };
+                            uint64_t* n3 = rdr2_callArgsPtr(N_GET_ENTITY_COORDS, na, 3);
+                            if (n3) {
+                                float nx, ny, nz;
+                                memcpy(&nx, &((float*)n3)[0], 4);
+                                memcpy(&ny, &((float*)n3)[1], 4);
+                                memcpy(&nz, &((float*)n3)[2], 4);
+                                float dx = nx - px, dy = ny - py, dz = nz - pz;
+                                float d = sqrtf(dx * dx + dy * dy + dz * dz);
+                                if (d == d && d < 500.0f) {
+                                    g_state->trainNearby = 1;
+                                    g_state->trainDist   = d;
+                                    
+                                    static float sPrevDist = 0.0f;
+                                    static DWORD sPrevTick = 0;
+                                    DWORD wt = GetTickCount();
+                                    if (sPrevTick != 0 && wt > sPrevTick && sPrevDist > 0.0f) {
+                                        float dt = (float)(wt - sPrevTick) / 1000.0f;
+                                        if (dt > 0.02f && dt < 1.0f) {
+                                            float app = (sPrevDist - d) / dt;
+                                            
+                                            g_state->trainApproach =
+                                                g_state->trainApproach * 0.5f + app * 0.5f;
+                                        }
+                                    }
+                                    sPrevDist = d; sPrevTick = wt;
+                                }
+                            }
+                        }
+                    }
+                    g_step = 27;
+                }
+            }
+        }
+    }
+
+    
+
     {
         static float sPrevSpeed = 0.0f;
         static DWORD sPrevTick  = 0;
@@ -536,6 +632,27 @@ void Tick(void) {
                     Log("换武器组：0x%08X（%s）", group, GroupName(group));
                 }
                 
+
+                {
+                    static uint32_t lastVeh = 0xFFFFFFFFu;
+                    static uint8_t  lastTrain = 0xFF;
+                    if (g_state->vehicleModel != lastVeh) {
+                        lastVeh = g_state->vehicleModel;
+                        Log("载具：模型=0x%08X 火车=%s 速度=%.1f",
+                            g_state->vehicleModel, g_state->inTrain ? "是" : "否",
+                            (double)g_state->vehicleSpeed);
+                    }
+                    uint8_t tr = (uint8_t)((g_state->inTrain ? 1 : 0) |
+                                           (g_state->trainNearby ? 2 : 0));
+                    if (tr != lastTrain) {
+                        lastTrain = tr;
+                        Log("火车状态：在车上=%s 附近有火车=%s（距离 %.1f 米）",
+                            (tr & 1) ? "是" : "否", (tr & 2) ? "是" : "否",
+                            (double)g_state->trainDist);
+                    }
+                }
+
+                
         {
             static uint8_t lastGait = 255;
             if (g_state->horseGait != lastGait) {
@@ -577,6 +694,10 @@ void Tick(void) {
                     g_state->mountJumping, g_state->mountFalling,
                     (double)g_state->mountHeight, (double)g_state->horseAccel,
                     g_state->mountHurt);
+                Log("载具诊断：在车=%u 火车=%u 模型=0x%08X 车速=%.1f 附近火车=%u 距离=%.1f 接近=%.1f",
+                    g_state->inVehicle, g_state->inTrain, g_state->vehicleModel,
+                    (double)g_state->vehicleSpeed, g_state->trainNearby,
+                    (double)g_state->trainDist, (double)g_state->trainApproach);
                 Log("诊断：持械=%u 瞄准=%u 开枪=%u 装弹=%u 骑马=%u 菜单=%u "
                     "弹匣(总量)=%d 弹匣(弹夹)=%d ｜ 菜单候选: 暂停菜单native=%d HUD隐藏=%d 有控制权=%d",
                     g_state->armed, g_state->aiming, g_state->shooting, g_state->reloading,

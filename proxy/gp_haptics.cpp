@@ -91,6 +91,15 @@ struct CtrlState {
     BOOL    driftFired, rearFired;
     DWORD   lastDriftTick, lastRearTick;
     DWORD   lastLandTick;    
+
+    
+    DWORD   vehNextTick;     
+    int     vehBeat;         
+    float   vehLevel;        
+    float   vehBody;         
+    DWORD   trainPassUntil;  
+    float   trainPassLevel;
+    BOOL    wasTrainNear;
     float   prevMountHeight;   
     DWORD   airborneSince;     
     float   peakAirHeight;     
@@ -459,6 +468,22 @@ void GpApplyHapticsSettings(const GpHapticsSettings& s) {
     if (g_s.spookAccel > -1.0f) g_s.spookAccel = -1.0f;
     if (g_s.mountLandRise < 0.1f) g_s.mountLandRise = 0.1f;
     if (g_s.mountLandRise > 1.0f) g_s.mountLandRise = 1.0f;
+    if (g_s.wagonGain < 0.0f) g_s.wagonGain = 0.0f;
+    if (g_s.wagonMinPeriodMs < 60) g_s.wagonMinPeriodMs = 60;
+    if (g_s.wagonMaxPeriodMs <= g_s.wagonMinPeriodMs) g_s.wagonMaxPeriodMs = g_s.wagonMinPeriodMs + 60;
+    if (g_s.wagonSpeedHigh <= g_s.wagonSpeedLow + 0.5f) g_s.wagonSpeedHigh = g_s.wagonSpeedLow + 0.5f;
+    if (g_s.wagonBodyBase < 0.0f) g_s.wagonBodyBase = 0.0f;
+    if (g_s.wagonBodyBase > 0.5f) g_s.wagonBodyBase = 0.5f;
+    if (g_s.trainRideGain < 0.0f) g_s.trainRideGain = 0.0f;
+    if (g_s.trainRideMinPeriodMs < 60) g_s.trainRideMinPeriodMs = 60;
+    if (g_s.trainRideMaxPeriodMs <= g_s.trainRideMinPeriodMs)
+        g_s.trainRideMaxPeriodMs = g_s.trainRideMinPeriodMs + 60;
+    if (g_s.trainRideBodyBase < 0.0f) g_s.trainRideBodyBase = 0.0f;
+    if (g_s.trainRideBodyBase > 0.5f) g_s.trainRideBodyBase = 0.5f;
+    if (g_s.trainPassGain < 0.0f) g_s.trainPassGain = 0.0f;
+    if (g_s.trainPassRadius < 10.0f) g_s.trainPassRadius = 10.0f;
+    if (g_s.trainPassApproachRef < 1.0f) g_s.trainPassApproachRef = 1.0f;
+    if (g_s.trainPassEnvMs < 100) g_s.trainPassEnvMs = 100;
     if (g_s.rideFadeMs < 0.0f) g_s.rideFadeMs = 0.0f;
     if (g_s.rideFadeMs > 5000.0f) g_s.rideFadeMs = 5000.0f;
     if (g_s.rideBeats < 1) g_s.rideBeats = 1;
@@ -986,6 +1011,111 @@ void GpOnGameState(uint32_t controller, DWORD now, BOOL valid, const GpRdr2State
             GP_LOG_DEBUG("haptics: 坐骑急变（%.1f/s2）-> 弱反馈", (double)st->horseAccel);
         }
     }
+    
+
+
+
+
+
+
+
+    {
+        BOOL stOk = cs->stateValid && !cs->uiOverlay;
+        float vehBody = 0.0f;
+
+        
+        if (g_s.wagonEnable && stOk && st->inVehicle && !st->inTrain &&
+            st->vehicleSpeed > g_s.wagonSpeedLow) {
+            float k = (st->vehicleSpeed - g_s.wagonSpeedLow) /
+                      (g_s.wagonSpeedHigh - g_s.wagonSpeedLow);
+            k = Clamp01(k);
+
+            
+            DWORD period = (DWORD)(g_s.wagonMaxPeriodMs +
+                                   (g_s.wagonMinPeriodMs - g_s.wagonMaxPeriodMs) * k);
+            if (period < 60) period = 60;
+
+            if (cs->vehNextTick == 0 || now >= cs->vehNextTick) {
+                cs->vehNextTick = now + period;
+                
+
+                float amp = g_s.wagonGain * (0.35f + 0.65f * k);
+                DWORD env = (DWORD)((float)period * 0.35f);
+                if (env < 30) env = 30;
+                GpFireEffect(controller, GP_FX_TICK, amp, (int)env, 2);
+            }
+            cs->vehBody = g_s.wagonBodyBase * k;      
+            cs->vehLevel = k;
+            cs->trainPassUntil = 0;                   
+        }
+        
+        else if (g_s.trainRideEnable && stOk && st->inTrain) {
+            float k = Clamp01(st->vehicleSpeed / 20.0f);
+            DWORD period = (DWORD)(g_s.trainRideMaxPeriodMs +
+                                   (g_s.trainRideMinPeriodMs - g_s.trainRideMaxPeriodMs) * k);
+            if (period < 60) period = 60;
+            
+
+            DWORD second = (DWORD)((float)period * 0.4f);
+            if (cs->vehNextTick == 0 || now >= cs->vehNextTick) {
+                cs->vehNextTick = now + period;
+                cs->vehBeat = 0;
+                GpFireEffect(controller, GP_FX_TICK, g_s.trainRideGain * (0.5f + 0.5f * k), 60, 2);
+            } else if (cs->vehBeat == 0 && now >= cs->vehNextTick - period + second) {
+                cs->vehBeat = 1;
+                GpFireEffect(controller, GP_FX_TICK, g_s.trainRideGain * 0.35f * (0.5f + 0.5f * k), 45, 2);
+            }
+            cs->vehBody = g_s.trainRideBodyBase * (0.4f + 0.6f * k);
+            cs->vehLevel = k;
+            cs->trainPassUntil = 0;
+        }
+        
+        else {
+            cs->vehNextTick = 0;
+            cs->vehBody = 0.0f;
+            cs->vehLevel = 0.0f;
+        }
+
+        
+
+
+        BOOL passNow = FALSE;
+        if (g_s.trainPassEnable && stOk && !st->inTrain && st->trainNearby &&
+            st->trainApproach > 0.5f && st->trainDist < g_s.trainPassRadius) {
+            float kApp = Clamp01(st->trainApproach / g_s.trainPassApproachRef);
+            float kDist = Clamp01(1.0f - st->trainDist / g_s.trainPassRadius);
+            float k = kApp * kDist;
+            if (k > 0.05f) {
+                passNow = TRUE;
+                
+                if (!cs->wasTrainNear) {
+                    GpFireEffect(controller, GP_FX_DRAW, g_s.trainPassGain * 1.1f,
+                                 g_s.trainPassEnvMs, 2);
+                    GP_LOG_INFO("haptics: 火车呼啸而过（距离 %.1f 米，接近 %.1f 米/秒）",
+                                (double)st->trainDist, (double)st->trainApproach);
+                }
+                cs->trainPassLevel = k;
+                cs->trainPassUntil = now + g_s.trainPassEnvMs + 400;
+            }
+        }
+        if (cs->trainPassUntil != 0 && now < cs->trainPassUntil && !passNow) {
+            
+            DWORD left = cs->trainPassUntil - now;
+            cs->trainPassLevel = cs->trainPassLevel * 0.90f;
+            if (left < 60) cs->trainPassLevel = 0.0f;
+        } else if (!passNow) {
+            cs->trainPassLevel = 0.0f;
+            cs->trainPassUntil = 0;
+        }
+        if (cs->trainPassLevel > 0.0f) {
+            vehBody += g_s.trainPassGain * cs->trainPassLevel;
+        }
+        cs->wasTrainNear = st->trainNearby ? TRUE : FALSE;
+
+        if (vehBody > 1.0f) vehBody = 1.0f;
+        cs->vehBody = Clamp01(cs->vehBody + vehBody);
+    }
+
     cs->horseSpeed = st->horseSpeed;
 
     
@@ -1127,6 +1257,10 @@ BOOL GpHapticsActive(uint32_t controller) {
 
 
     if (cs->aimActiveNow || cs->bowActiveNow) return TRUE;
+
+    
+
+    if (cs->vehBody > 0.0f) return TRUE;
 
     return FALSE;
 }
@@ -1364,6 +1498,14 @@ void GpTickHaptics(uint32_t controller, DWORD now, BOOL hasGame,
             addBodyR += amp * 255.0f;
             addTrigL += amp * g_s.rideTrigGain * 255.0f;
             addTrigR += amp * g_s.rideTrigGain * 255.0f;
+        }
+
+        
+
+
+        if (cs->vehBody > 0.0f) {
+            addBodyL += cs->vehBody * 255.0f * 0.6f;
+            addBodyR += cs->vehBody * 255.0f * 0.6f;
         }
     } else if (cs->rideLogged) {
         cs->rideLogged = FALSE;

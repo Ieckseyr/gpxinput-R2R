@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define GPRDR2_MAGIC   0x52533231u   
-#define GPRDR2_VERSION 8u
+#define GPRDR2_VERSION 9u
 #define GPRDR2_NAME    L"Local\\GpRdr2State_v1"
 
 
@@ -71,7 +71,16 @@ typedef struct GpRdr2State {
     uint8_t  mountFalling;    
     float    mountHeight;     
     uint8_t  mountHurt;       
-    float    horseAccel;          
+    float    horseAccel;      
+
+    
+
+    uint8_t  inTrain;         
+    uint32_t vehicleModel;    
+    float    vehicleSpeed;    
+    uint8_t  trainNearby;     
+    float    trainDist;       
+    float    trainApproach;       
 
     
 
