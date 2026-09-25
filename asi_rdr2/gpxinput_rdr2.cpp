@@ -1,4 +1,5 @@
-// asi
+
+
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>
@@ -21,6 +22,13 @@ unsigned long g_excCode = 0;
 
 BOOL g_tickSeen      = FALSE;
 BOOL g_outsideWorld  = FALSE;
+
+BOOL g_invokerChecked = FALSE;
+BOOL g_publishState   = TRUE;
+int  g_insaneFrames   = 0;
+BOOL g_insaneWarned   = FALSE;
+
+BOOL g_maskedResult   = FALSE;
 
 
 HMODULE       g_self       = nullptr;
@@ -155,36 +163,30 @@ const char* GroupName(uint32_t h) {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #define GP_UNARMED_HASH 0xA2719263u
+#define GP_WEAPON_SETTLE_MS 250
+
+uint32_t g_prevWeapon       = 0;
+uint32_t g_stableWeapon     = 0;
+int      g_stableFrames     = 0;
+DWORD    g_weaponChangeTick = 0;
+
+void UpdateWeaponStability(uint32_t w) {
+    DWORD now = GetTickCount();
+    if (w != g_prevWeapon) {           
+        g_prevWeapon       = w;
+        g_stableFrames     = 0;
+        g_weaponChangeTick = now;
+    } else if (g_stableFrames < 1000) {
+        ++g_stableFrames;
+    }
+    g_stableWeapon = w;
+}
 
 BOOL WeaponHashSafe(uint32_t w) {
-    static uint32_t sPrev = 0;
-    BOOL stable = (w != 0) && (w != GP_UNARMED_HASH) && (w == sPrev);
-    sPrev = w;
-    return stable;
+    if (w == 0 || w == GP_UNARMED_HASH) return FALSE;       
+    if (w != g_stableWeapon || g_stableFrames < 2) return FALSE;    
+    return (DWORD)(GetTickCount() - g_weaponChangeTick) >= GP_WEAPON_SETTLE_MS;
 }
 
 int ReadAmmoTotal(int ped, uint32_t weapon) {
@@ -241,13 +243,82 @@ BOOL ReadAmmo(int ped, uint32_t weapon, uint32_t group, int* out) {
     return FALSE;
 }
 
-void Tick(void) {
+
+BOOL DetectResultLayout(void) {
+    sh::nativeInit(N_IS_PED_ON_FOOT);
+    sh::nativePush64(0);                        
+    uint64_t* r = sh::nativeCall();
+    uint64_t raw = r ? *r : 0;
+
+    g_maskedResult = (raw >> 32) != 0;
+    g_resultMask = g_maskedResult ? 0xFFFFFFFFull : ~0ull;
+
+    Log("结果布局探测：IS_PED_ON_FOOT(0) 原始读=0x%llX -> %s（%s）",
+        (unsigned long long)raw,
+        g_maskedResult ? "只取低 32 位" : "取 64 位",
+        g_maskedResult ? "V2 布局：高 32 位是参数个数" : "V1 布局：低 64 位即返回值");
+
+    if ((raw & g_resultMask) != 0) {
+        Log("结果布局探测失败：按掩码取出的值非 0（0x%llX）—— 调用器行为异常",
+            (unsigned long long)(raw & g_resultMask));
+        return FALSE;
+    }
+    return TRUE;
+}
     
 
+BOOL InvokerSelfTest(int ped) {
+    struct { const char* name; uint64_t hash; } one[] = {
+        { "IS_PED_ON_FOOT",    N_IS_PED_ON_FOOT },
+        { "GET_MOUNT",         N_GET_MOUNT },
+        { "IS_PED_RELOADING",  N_IS_PED_RELOADING },
+        { "GET_ENTITY_HEALTH", N_GET_ENTITY_HEALTH },
+    };
+    char bad[256] = {0};
+    int  nbad = 0;
+
+    for (int i = 0; i < 4; ++i) {
+        uint64_t v = rdr2_call1(one[i].hash, 0);         
+        if (v != 0) {
+            int w = (int)strlen(bad);
+            sprintf(bad + w, "%s%s=%llu", w ? " " : "", one[i].name,
+                    (unsigned long long)v);
+            ++nbad;
+        }
+    }
+
+    if (rdr2_call1(N_GET_ENTITY_HEALTH, (uint64_t)(int64_t)ped) == 0) {
+        int w = (int)strlen(bad);
+        sprintf(bad + w, "%sGET_ENTITY_HEALTH(ped)=0", w ? " " : "");
+        ++nbad;
+    }
+
+    if (nbad >= 2) {
+        Log("调用器自检未通过（%d 条不成立）：%s —— 带参数的 native 读数不可信，"
+            "已停止发布游戏状态；代理会在 1 秒后自动退回「只看扳机」。"
+            "请把这一行发给开发者", nbad, bad);
+        return FALSE;
+    }
+    if (nbad == 1) {
+        Log("调用器自检提示：1 条探针不成立（%s）—— 视为探针假设问题，继续发布状态；"
+            "若之后出现持续震动或读数异常，请把这一行发给开发者", bad);
+        return TRUE;
+    }
+    Log("调用器自检通过：无效句柄探针全为 0、有效 ped 血量 > 0，带参 native 可用");
+    return TRUE;
+}
 
 
+BOOL StateLooksSane(void) {
+    if (g_state->shooting  && !g_state->armed)    return FALSE;    
+    if (g_state->reloading && !g_state->armed)    return FALSE;    
+    if (g_state->aiming    && !g_state->armed)    return FALSE;    
+    if (g_state->onFoot    && g_state->onMount)   return FALSE;    
+    if (g_state->onFoot    && g_state->inVehicle) return FALSE;    
+    return TRUE;
+}
 
-
+void Tick(void) {
 
     for (;;) {
         if (InterlockedCompareExchange(&g_disabled, 1, 1) == 1) {
@@ -270,15 +341,24 @@ void Tick(void) {
             int ped = (int)rdr2_call0(N_PLAYER_PED_ID);
 
             
-
             if (!g_checked && ped != 0) {
                 g_checked = TRUE;
                 Log("自检通过：playerPed=%d，开始发布游戏状态", ped);
             }
 
             
+            if (g_checked && !g_invokerChecked) {
+                g_invokerChecked = TRUE;
+                g_publishState   = DetectResultLayout() && InvokerSelfTest(ped);
+            }
+            if (!g_publishState) {
 
-
+                static int sIdle = 0;
+                if ((++sIdle % 3000) == 0)
+                    Log("状态发布已停用（调用器自检未通过）—— 脚本仍在运行，等修好再发");
+                sh::scriptWait(0);
+                continue;
+            }
 
 
             if (ped == 0) {
@@ -295,7 +375,7 @@ void Tick(void) {
             }
 
             
-            {
+            if (!g_maskedResult) {
                 static BOOL sFeedShown = FALSE;
                 if (!sFeedShown) {
                     sFeedShown = TRUE;
@@ -305,12 +385,9 @@ void Tick(void) {
             }
 
             
-
-
             g_step = 2;
             uint32_t weapon    = CurrentWeapon(ped);
-        
-
+            UpdateWeaponStability(weapon);
 
         {
             static uint32_t lastAmmoWeapon = 0;
@@ -325,14 +402,22 @@ void Tick(void) {
                 g_step = 3;
                 group = (uint32_t)rdr2_call1(N_GET_WEAPONTYPE_GROUP, weapon);
                 g_step = 4;
+
+                static int      sLastAmmo       = 0;
+                static uint32_t sLastAmmoWeapon = 0;
                 int total = ReadAmmoTotal(ped, weapon);
                 if (total >= 0) {
                     ammo = total;
+                    sLastAmmo       = total;
+                    sLastAmmoWeapon = weapon;
+                } else if (weapon == sLastAmmoWeapon) {
+                    ammo = sLastAmmo;
                 } else {
                     ammo = 0;
                 }
                 g_ammoClip = 0;
-                ReadAmmo(ped, weapon, group, &g_ammoClip);   
+
+                if (!g_maskedResult) ReadAmmo(ped, weapon, group, &g_ammoClip);
             }
             g_step = 5;
             uint32_t sinceShot = (uint32_t)rdr2_call1(N_TIME_SINCE_PED_LAST_SHOT, (uint64_t)(int64_t)ped);
@@ -349,8 +434,8 @@ void Tick(void) {
                 if (v == v && v < 1000.0f) horseSpeed = v;   
             }
 
-            
             g_step = 8;
+            DWORD prevTickMs = g_state->tickMs;    
             g_state->seq++;                 
             MemoryBarrier();
 
@@ -436,12 +521,20 @@ void Tick(void) {
         }
 
         
-
-
         g_step = 24;
         {
+
+            if (g_maskedResult) {
+                static BOOL sTrainWarned = FALSE;
+                if (!sTrainWarned) {
+                    sTrainWarned = TRUE;
+                    Log("V2 结果布局：拿不到结构体返回（Vector3），已停用「附近火车」判定；"
+                        "其余状态正常");
+                }
+            }
             uint64_t ca[3] = { (uint64_t)(int64_t)ped, 1, 0 };   
-            uint64_t* v3 = rdr2_callArgsPtr(N_GET_ENTITY_COORDS, ca, 3);
+            uint64_t* v3 = g_maskedResult ? nullptr
+                                          : rdr2_callArgsPtr(N_GET_ENTITY_COORDS, ca, 3);
             if (v3) {
                 float px, py, pz;
                 memcpy(&px, &((float*)v3)[0], 4);
@@ -593,6 +686,19 @@ void Tick(void) {
             g_state->playerSpeed = 0.0f;
             g_state->mountHash   = 0;
             g_state->playerPed   = (uint32_t)ped;
+
+
+            if (StateLooksSane()) {
+                g_insaneFrames = 0;
+            } else if (++g_insaneFrames > 60) {
+                g_state->tickMs = prevTickMs;    
+                if (!g_insaneWarned) {
+                    g_insaneWarned = TRUE;
+                    Log("状态自洽闸生效：读到的组合在游戏里不可能成立（空手却开枪/装弹/"
+                        "瞄准，或步行与骑马、乘车同时为真）—— 已按「状态过期」处理，"
+                        "不会给出持续震动。根因是 native 读数不可信，请把这行发给开发者");
+                }
+            }
 
             MemoryBarrier();
             g_state->seq++;                 

@@ -1,4 +1,5 @@
-// sdk
+
+
 #ifndef SH_RDR2_H
 #define SH_RDR2_H
 
@@ -121,21 +122,20 @@ inline bool Resolve(void) {
 
 
 
-
-
+inline uint64_t g_resultMask = ~0ull;
 
 
 inline uint64_t rdr2_call0(uint64_t hash) {
     sh::nativeInit(hash);
     uint64_t* r = sh::nativeCall();
-    return r ? *r : 0;
+    return r ? (*r & g_resultMask) : 0;
 }
 
 inline uint64_t rdr2_call1(uint64_t hash, uint64_t a1) {
     sh::nativeInit(hash);
     sh::nativePush64(a1);
     uint64_t* r = sh::nativeCall();
-    return r ? *r : 0;
+    return r ? (*r & g_resultMask) : 0;
 }
 
 inline uint64_t rdr2_call2(uint64_t hash, uint64_t a1, uint64_t a2) {
@@ -143,7 +143,7 @@ inline uint64_t rdr2_call2(uint64_t hash, uint64_t a1, uint64_t a2) {
     sh::nativePush64(a1);
     sh::nativePush64(a2);
     uint64_t* r = sh::nativeCall();
-    return r ? *r : 0;
+    return r ? (*r & g_resultMask) : 0;
 }
 
 inline uint64_t rdr2_call3(uint64_t hash, uint64_t a1, uint64_t a2, uint64_t a3) {
@@ -152,15 +152,14 @@ inline uint64_t rdr2_call3(uint64_t hash, uint64_t a1, uint64_t a2, uint64_t a3)
     sh::nativePush64(a2);
     sh::nativePush64(a3);
     uint64_t* r = sh::nativeCall();
-    return r ? *r : 0;
+    return r ? (*r & g_resultMask) : 0;
 }
-
 
 inline uint64_t rdr2_callArgs(uint64_t hash, const uint64_t* a, int n) {
     sh::nativeInit(hash);
     for (int i = 0; i < n; ++i) sh::nativePush64(a[i]);
     uint64_t* r = sh::nativeCall();
-    return r ? *r : 0;
+    return r ? (*r & g_resultMask) : 0;
 }
 
 
